@@ -1,60 +1,142 @@
 import * as vscode from 'vscode';
 import { exec } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
 
 interface BranchState {
     files: string[];
 }
 
+function getAllOpenFiles(): string[] {
+    const openFiles = new Set<string>();
+
+    // Helper function to check if a file should be included
+    const shouldIncludeFile = (filePath: string): boolean => {
+        const parts = filePath.split(path.sep);
+        return !parts.some(part => part.startsWith('.'));
+    };
+
+    // Get files from visible text editors
+    vscode.window.visibleTextEditors.forEach(editor => {
+        if (editor.document.uri.scheme === 'file' && shouldIncludeFile(editor.document.fileName)) {
+            openFiles.add(editor.document.fileName);
+        }
+    });
+
+    // Get files from all open text documents
+    vscode.workspace.textDocuments.forEach(doc => {
+        if (doc.uri.scheme === 'file' && shouldIncludeFile(doc.fileName)) {
+            openFiles.add(doc.fileName);
+        }
+    });
+
+    return Array.from(openFiles);
+}
+
 export function activate(context: vscode.ExtensionContext) {
     let currentBranch: string | null = null;
 
-        const saveState = vscode.commands.registerCommand('branchesWithFiles.saveState', async () => {
+    const saveState = vscode.commands.registerCommand('branchesWithFiles.saveState', async () => {
         try {
             const branch = await getCurrentBranch();
             if (branch) {
-                const openFiles = vscode.window.visibleTextEditors.map(editor => editor.document.uri.fsPath);
+                const openFiles = getAllOpenFiles();
+                console.log(`Number of open files: ${openFiles.length}`);
+                console.log(`Open files: ${openFiles.join(', ')}`);
+
+                if (openFiles.length === 0) {
+                    vscode.window.showInformationMessage('No open files to save.');
+                    return;
+                }
+
                 await context.workspaceState.update(branch, { files: openFiles });
-                vscode.window.showInformationMessage(`Saved state for branch '${branch}'`);
+
+                // Prepare the message with file names
+                const maxFilesToShow = 5; // Adjust this number as needed
+                const fileNames = openFiles.map(file => path.basename(file));
+                let message = `Saved state for branch '${branch}' (${openFiles.length} files):\n`;
+                message += fileNames.slice(0, maxFilesToShow).join('\n');
+                
+                if (openFiles.length > maxFilesToShow) {
+                    message += `\n... and ${openFiles.length - maxFilesToShow} more`;
+                }
+
+                // Show the information message with file names
+                vscode.window.showInformationMessage(message, 'Show All Files').then(selection => {
+                    if (selection === 'Show All Files') {
+                        // If user clicks "Show All Files", display full list in output channel
+                        const outputChannel = vscode.window.createOutputChannel('Branches With Files');
+                        outputChannel.clear();
+                        outputChannel.appendLine(`All saved files for branch '${branch}' (${openFiles.length}):`);
+                        openFiles.forEach((file, index) => {
+                            outputChannel.appendLine(`${index + 1}. ${file}`);
+                        });
+                        outputChannel.show(true);
+                    }
+                });
+            } else {
+                vscode.window.showErrorMessage('Unable to determine the current Git branch.');
             }
-            // The error message for no branch will be shown by getCurrentBranch()
-        } catch (error) {
+        } catch (error: any) {
             vscode.window.showErrorMessage(`An error occurred while saving the branch state: ${error.message}`);
         }
     });
 
     const restoreState = vscode.commands.registerCommand('branchesWithFiles.restoreState', async () => {
-        const branch = await getCurrentBranch();
-        if (branch) {
-            const state = context.workspaceState.get<BranchState>(branch);
-            
-            // Close all currently open editors
-            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        try {
+            const branch = await getCurrentBranch();
+            console.log(`Restoring state for branch: ${branch}`);
+            if (branch) {
+                const state = context.workspaceState.get<BranchState>(branch);
+                if (state && state.files.length > 0) {
+                    // Close all currently open editors
+                    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
 
-            if (state && state.files.length > 0) {
-                const documents = await Promise.all(
-                    state.files.map(async file => {
+                    for (const filePath of state.files) {
                         try {
-                            return await vscode.workspace.openTextDocument(file);
-                        } catch (error) {
-                            console.error(`Failed to open file: ${file}`, error);
-                            vscode.window.showWarningMessage(`Failed to open file: ${file}`);
-                            return null;
+                            const doc = await vscode.workspace.openTextDocument(filePath);
+                            await vscode.window.showTextDocument(doc, { preview: false });
+                            console.log(`Opened file: ${filePath}`);
+                        } catch (openError: any) {
+                            console.error(`Failed to open file ${filePath}: ${openError.message}`);
+                            vscode.window.showWarningMessage(`Failed to open file ${filePath}: ${openError.message}`);
                         }
-                    })
-                );
-                for (const doc of documents) {
-                    if (doc) {
-                        await vscode.window.showTextDocument(doc, { preview: false });
                     }
+                    vscode.window.showInformationMessage(`Restored state for branch '${branch}' (${state.files.length} files).`);
+                } else {
+                    vscode.window.showInformationMessage(`No saved state found for branch '${branch}'.`);
                 }
-                vscode.window.showInformationMessage(`Restored state for branch '${branch}'`);
             } else {
-                vscode.window.showInformationMessage(`No saved state for branch '${branch}'`);
+                vscode.window.showErrorMessage('Unable to determine the current Git branch.');
             }
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`An error occurred while restoring the branch state: ${error.message}`);
         }
-        // The error message for no branch will be shown by getCurrentBranch()
     });
+
+    const logAllOpenFiles = vscode.commands.registerCommand('branchesWithFiles.logAllOpenFiles', () => {
+        const openFiles = getAllOpenFiles();
+        
+        if (openFiles.length === 0) {
+            vscode.window.showInformationMessage('No open files found.');
+            return;
+        }
+
+        const fileList = openFiles
+            .map((file, index) => `${index + 1}. ${file}`)
+            .join('\n');
+
+        // Create and show output channel
+        const outputChannel = vscode.window.createOutputChannel('Branches With Files');
+        outputChannel.clear();
+        outputChannel.appendLine(`All Open Files (${openFiles.length}):`);
+        outputChannel.appendLine(fileList);
+        outputChannel.show(true);
+
+        vscode.window.showInformationMessage(`Logged ${openFiles.length} open files to the output channel.`);
+    });
+
+    context.subscriptions.push(saveState, restoreState, logAllOpenFiles);
 
     // Automatically restore state when switching branches
     const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
@@ -81,8 +163,6 @@ export function activate(context: vscode.ExtensionContext) {
             dispose: () => clearInterval(pollInterval)
         });
     }
-
-    context.subscriptions.push(saveState, restoreState);
 }
 
 export function deactivate() {}

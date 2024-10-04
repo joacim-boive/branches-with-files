@@ -1,7 +1,7 @@
 {
   "name": "branches-with-files",
   "publisher": "Joacim Boive",
-  "version": "1.0.2",
+  "version": "1.0.6",
   "main": "out/extension.js",
   "author": "Joacim Boive <joacim.boive@carnegie.se>",
   "license": "MIT",
@@ -13,7 +13,9 @@
     "vscode": "^1.91.0"
   },
   "activationEvents": [
-    "onStartupFinished"
+    "onCommand:branchesWithFiles.saveState",
+    "onCommand:branchesWithFiles.restoreState",
+    "onCommand:branchesWithFiles.logAllOpenFiles"
   ],
   "contributes": {
     "commands": [
@@ -24,14 +26,22 @@
       {
         "command": "branchesWithFiles.restoreState",
         "title": "Restore Branch State"
+      },
+      {
+        "command": "branchesWithFiles.logAllOpenFiles",
+        "title": "Log All Open Files"
       }
     ]
   },
   "scripts": {
-    "vscode:prepublish": "yarn run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package"
+    "package": "vsce package",
+    "test": "node ./out/test/runTest.js",
+    "lint": "eslint src --ext ts",
+    "prepublish": "yarn compile",
+    "prepare": "yarn compile",
+    "deploy": "npm version minor && yarn compile && yarn package"
   },
   "devDependencies": {
     "@types/node": "^22.7.4",
