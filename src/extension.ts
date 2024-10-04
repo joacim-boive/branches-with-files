@@ -27,12 +27,26 @@ export function activate(context: vscode.ExtensionContext) {
         const branch = await getCurrentBranch();
         if (branch) {
             const state = context.workspaceState.get<BranchState>(branch);
+            
+            // Close all currently open editors
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+
             if (state && state.files.length > 0) {
                 const documents = await Promise.all(
-                    state.files.map(file => vscode.workspace.openTextDocument(file))
+                    state.files.map(async file => {
+                        try {
+                            return await vscode.workspace.openTextDocument(file);
+                        } catch (error) {
+                            console.error(`Failed to open file: ${file}`, error);
+                            vscode.window.showWarningMessage(`Failed to open file: ${file}`);
+                            return null;
+                        }
+                    })
                 );
                 for (const doc of documents) {
-                    await vscode.window.showTextDocument(doc, { preview: false });
+                    if (doc) {
+                        await vscode.window.showTextDocument(doc, { preview: false });
+                    }
                 }
                 vscode.window.showInformationMessage(`Restored state for branch '${branch}'`);
             } else {
