@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { exec } from 'child_process';
+import * as path from 'path';
 
 interface BranchState {
     files: string[];
@@ -15,12 +16,10 @@ export function activate(context: vscode.ExtensionContext) {
                 const openFiles = vscode.window.visibleTextEditors.map(editor => editor.document.uri.fsPath);
                 await context.workspaceState.update(branch, { files: openFiles });
                 vscode.window.showInformationMessage(`Saved state for branch '${branch}'`);
-            } else {
-                vscode.window.showWarningMessage('Unable to save state: Not in a Git repository or unable to determine the current branch.');
             }
+            // The error message for no branch will be shown by getCurrentBranch()
         } catch (error) {
-            console.error('Error in saveState:', error);
-            vscode.window.showErrorMessage('An error occurred while saving the branch state.');
+            vscode.window.showErrorMessage(`An error occurred while saving the branch state: ${error.message}`);
         }
     });
 
@@ -39,9 +38,8 @@ export function activate(context: vscode.ExtensionContext) {
             } else {
                 vscode.window.showInformationMessage(`No saved state for branch '${branch}'`);
             }
-        } else {
-            vscode.window.showErrorMessage('Unable to determine the current Git branch.');
         }
+        // The error message for no branch will be shown by getCurrentBranch()
     });
 
     // Automatically restore state when switching branches
@@ -81,26 +79,32 @@ export function deactivate() {}
  */
 function getCurrentBranch(): Promise<string | null> {
     return new Promise((resolve) => {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        if (!workspaceFolder) {
-            console.log('No workspace folder found');
+        const activeEditor = vscode.window.activeTextEditor;
+        const filePath = activeEditor?.document.uri.fsPath;
+        
+        if (!filePath) {
+            vscode.window.showInformationMessage('No active file found. Please open a file in a Git repository.');
             resolve(null);
             return;
         }
 
-        exec('git rev-parse --abbrev-ref HEAD', { cwd: workspaceFolder }, (err, stdout, stderr) => {
+        const directoryPath = path.dirname(filePath);
+
+        exec('git rev-parse --abbrev-ref HEAD', { cwd: directoryPath }, (err, stdout, stderr) => {
             if (err) {
-                console.error('Error executing git command:', err);
                 if (err.code === 128) {
-                    console.log('Not a git repository');
+                    vscode.window.showErrorMessage('The current file is not in a Git repository.');
+                } else {
+                    vscode.window.showErrorMessage(`Error executing Git command: ${err.message}`);
                 }
                 resolve(null);
             } else if (stderr) {
-                console.error('Git command stderr:', stderr);
+                vscode.window.showErrorMessage(`Git command error: ${stderr}`);
                 resolve(null);
             } else {
                 const branch = stdout.trim();
-                console.log('Current branch:', branch);
+                // We might want to keep this as a console.log for debugging purposes
+                // console.log('Current branch:', branch);
                 resolve(branch);
             }
         });

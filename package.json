@@ -1,7 +1,7 @@
 {
   "name": "branches-with-files",
   "publisher": "Joacim Boive",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "out/extension.js",
   "author": "Joacim Boive <joacim.boive@carnegie.se>",
   "license": "MIT",
