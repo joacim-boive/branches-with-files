@@ -36,6 +36,8 @@ function getAllOpenFiles(): string[] {
 
 async function saveState(context: vscode.ExtensionContext, branch: string) {
   const openFiles = getAllOpenFiles();
+  console.log(`Saving state for branch '${branch}'. Open files:`, openFiles);
+
   if (openFiles.length > 0) {
     const branchStates = context.workspaceState.get<Record<string, BranchState>>(
       'branchStates',
@@ -51,23 +53,28 @@ async function saveState(context: vscode.ExtensionContext, branch: string) {
         showFileList(branch, openFiles);
       }
     });
+  } else {
+    vscode.window.showInformationMessage(`No open files to save for branch '${branch}'.`);
   }
 }
 
 async function restoreState(context: vscode.ExtensionContext, branch: string) {
   const branchStates = context.workspaceState.get<Record<string, BranchState>>('branchStates', {});
+  console.log('Current branchStates:', branchStates);
   const state = branchStates[branch];
   if (state && state.files.length > 0) {
+    console.log(`Restoring state for branch '${branch}'. Files to open:`, state.files);
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     for (const filePath of state.files) {
       try {
         const doc = await vscode.workspace.openTextDocument(filePath);
         await vscode.window.showTextDocument(doc, { preview: false });
+        console.log(`Opened file: ${filePath}`);
       } catch (error) {
         console.error(`Failed to open file ${filePath}: ${error}`);
+        vscode.window.showWarningMessage(`Failed to open file: ${filePath}`);
       }
     }
-    console.log(`Restored state for branch '${branch}' (${state.files.length} files).`);
 
     const message = `Restored state for branch '${branch}' (${state.files.length} files).`;
     vscode.window.showInformationMessage(message, 'Show Files').then((selection) => {
@@ -76,7 +83,7 @@ async function restoreState(context: vscode.ExtensionContext, branch: string) {
       }
     });
   } else {
-    console.log(`No saved state found for branch '${branch}'.`);
+    vscode.window.showInformationMessage(`No saved state found for branch '${branch}'.`);
   }
 }
 
@@ -102,6 +109,7 @@ async function getCurrentBranch(): Promise<string | null> {
     return stdout.trim();
   } catch (error) {
     console.error('Error getting current branch:', error);
+    vscode.window.showErrorMessage('Failed to get current Git branch.');
     return null;
   }
 }
@@ -111,19 +119,17 @@ async function handleBranchChange(context: vscode.ExtensionContext, newBranch: s
   if (currentBranch && currentBranch !== newBranch) {
     await saveState(context, currentBranch);
   }
-  if (newBranch !== currentBranch) {
-    currentBranch = newBranch;
-    await restoreState(context, newBranch);
-  }
+  currentBranch = newBranch;
+  await restoreState(context, newBranch);
 }
 
 export async function activate(context: vscode.ExtensionContext) {
-  console.log('Activating Branches With Files extension');
+  vscode.window.showInformationMessage('Activating Branches With Files extension');
 
   // Initial branch detection
   currentBranch = await getCurrentBranch();
-  console.log(`Initial branch: ${currentBranch}`);
   if (currentBranch) {
+    vscode.window.showInformationMessage(`Initial branch: ${currentBranch}`);
     await restoreState(context, currentBranch);
   }
 
@@ -172,8 +178,9 @@ export async function activate(context: vscode.ExtensionContext) {
       try {
         const branch = await getCurrentBranch();
         if (branch) {
+          // Ensure we're using the most up-to-date branch information
+          currentBranch = branch;
           await saveState(context, branch);
-          vscode.window.showInformationMessage(`Manually saved state for branch '${branch}'.`);
         } else {
           throw new Error('Unable to determine the current Git branch.');
         }
@@ -189,8 +196,9 @@ export async function activate(context: vscode.ExtensionContext) {
       try {
         const branch = await getCurrentBranch();
         if (branch) {
+          // Ensure we're using the most up-to-date branch information
+          currentBranch = branch;
           await restoreState(context, branch);
-          vscode.window.showInformationMessage(`Manually restored state for branch '${branch}'.`);
         } else {
           throw new Error('Unable to determine the current Git branch.');
         }
