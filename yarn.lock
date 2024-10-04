@@ -14,7 +14,7 @@
   dependencies:
     undici-types "~6.19.2"
 
-"@types/vscode@^1.94.0":
+"@types/vscode@^1.91.0":
   version "1.94.0"
   resolved "https://pkgs.dev.azure.com/carnegieinvestmentbank/_packaging/Carnegie/npm/registry/@types/vscode/-/vscode-1.94.0.tgz#ccd2111b6ecaba6ad4da19c2d524828fa73ae250"
   integrity sha1-zNIRG27KumrU2hnC1SSCj6c64lA=

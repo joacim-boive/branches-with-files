@@ -8,7 +8,7 @@ interface BranchState {
 export function activate(context: vscode.ExtensionContext) {
     let currentBranch: string | null = null;
 
-    const saveState = vscode.commands.registerCommand('branchesWithFiles.saveState', async () => {
+        const saveState = vscode.commands.registerCommand('branchesWithFiles.saveState', async () => {
         try {
             const branch = await getCurrentBranch();
             if (branch) {
@@ -16,7 +16,7 @@ export function activate(context: vscode.ExtensionContext) {
                 await context.workspaceState.update(branch, { files: openFiles });
                 vscode.window.showInformationMessage(`Saved state for branch '${branch}'`);
             } else {
-                vscode.window.showErrorMessage('Unable to determine the current Git branch.');
+                vscode.window.showWarningMessage('Unable to save state: Not in a Git repository or unable to determine the current branch.');
             }
         } catch (error) {
             console.error('Error in saveState:', error);
@@ -82,9 +82,18 @@ export function deactivate() {}
 function getCurrentBranch(): Promise<string | null> {
     return new Promise((resolve) => {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!workspaceFolder) {
+            console.log('No workspace folder found');
+            resolve(null);
+            return;
+        }
+
         exec('git rev-parse --abbrev-ref HEAD', { cwd: workspaceFolder }, (err, stdout, stderr) => {
             if (err) {
                 console.error('Error executing git command:', err);
+                if (err.code === 128) {
+                    console.log('Not a git repository');
+                }
                 resolve(null);
             } else if (stderr) {
                 console.error('Git command stderr:', stderr);
