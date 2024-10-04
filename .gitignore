@@ -5,7 +5,7 @@ node_modules/
 .vscode/
 
 # Compiled JavaScript output
-out/
+/out/
 
 # Logs
 npm-debug.log*

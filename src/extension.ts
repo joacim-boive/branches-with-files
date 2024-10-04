@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { exec } from 'child_process';
+import * as path from 'path';
 
 interface BranchState {
     files: string[];
@@ -8,14 +9,17 @@ interface BranchState {
 export function activate(context: vscode.ExtensionContext) {
     let currentBranch: string | null = null;
 
-    const saveState = vscode.commands.registerCommand('branchesWithFiles.saveState', async () => {
-        const branch = await getCurrentBranch();
-        if (branch) {
-            const openFiles = vscode.window.visibleTextEditors.map(editor => editor.document.uri.fsPath);
-            await context.workspaceState.update(branch, { files: openFiles });
-            vscode.window.showInformationMessage(`Saved state for branch '${branch}'`);
-        } else {
-            vscode.window.showErrorMessage('Unable to determine the current Git branch.');
+        const saveState = vscode.commands.registerCommand('branchesWithFiles.saveState', async () => {
+        try {
+            const branch = await getCurrentBranch();
+            if (branch) {
+                const openFiles = vscode.window.visibleTextEditors.map(editor => editor.document.uri.fsPath);
+                await context.workspaceState.update(branch, { files: openFiles });
+                vscode.window.showInformationMessage(`Saved state for branch '${branch}'`);
+            }
+            // The error message for no branch will be shown by getCurrentBranch()
+        } catch (error) {
+            vscode.window.showErrorMessage(`An error occurred while saving the branch state: ${error.message}`);
         }
     });
 
@@ -34,9 +38,8 @@ export function activate(context: vscode.ExtensionContext) {
             } else {
                 vscode.window.showInformationMessage(`No saved state for branch '${branch}'`);
             }
-        } else {
-            vscode.window.showErrorMessage('Unable to determine the current Git branch.');
         }
+        // The error message for no branch will be shown by getCurrentBranch()
     });
 
     // Automatically restore state when switching branches
@@ -76,11 +79,33 @@ export function deactivate() {}
  */
 function getCurrentBranch(): Promise<string | null> {
     return new Promise((resolve) => {
-        exec('git rev-parse --abbrev-ref HEAD', (err, stdout, stderr) => {
-            if (err || stderr) {
+        const activeEditor = vscode.window.activeTextEditor;
+        const filePath = activeEditor?.document.uri.fsPath;
+        
+        if (!filePath) {
+            vscode.window.showInformationMessage('No active file found. Please open a file in a Git repository.');
+            resolve(null);
+            return;
+        }
+
+        const directoryPath = path.dirname(filePath);
+
+        exec('git rev-parse --abbrev-ref HEAD', { cwd: directoryPath }, (err, stdout, stderr) => {
+            if (err) {
+                if (err.code === 128) {
+                    vscode.window.showErrorMessage('The current file is not in a Git repository.');
+                } else {
+                    vscode.window.showErrorMessage(`Error executing Git command: ${err.message}`);
+                }
+                resolve(null);
+            } else if (stderr) {
+                vscode.window.showErrorMessage(`Git command error: ${stderr}`);
                 resolve(null);
             } else {
-                resolve(stdout.trim());
+                const branch = stdout.trim();
+                // We might want to keep this as a console.log for debugging purposes
+                // console.log('Current branch:', branch);
+                resolve(branch);
             }
         });
     });
