@@ -9,13 +9,18 @@ export function activate(context: vscode.ExtensionContext) {
     let currentBranch: string | null = null;
 
     const saveState = vscode.commands.registerCommand('branchesWithFiles.saveState', async () => {
-        const branch = await getCurrentBranch();
-        if (branch) {
-            const openFiles = vscode.window.visibleTextEditors.map(editor => editor.document.uri.fsPath);
-            await context.workspaceState.update(branch, { files: openFiles });
-            vscode.window.showInformationMessage(`Saved state for branch '${branch}'`);
-        } else {
-            vscode.window.showErrorMessage('Unable to determine the current Git branch.');
+        try {
+            const branch = await getCurrentBranch();
+            if (branch) {
+                const openFiles = vscode.window.visibleTextEditors.map(editor => editor.document.uri.fsPath);
+                await context.workspaceState.update(branch, { files: openFiles });
+                vscode.window.showInformationMessage(`Saved state for branch '${branch}'`);
+            } else {
+                vscode.window.showErrorMessage('Unable to determine the current Git branch.');
+            }
+        } catch (error) {
+            console.error('Error in saveState:', error);
+            vscode.window.showErrorMessage('An error occurred while saving the branch state.');
         }
     });
 
@@ -76,11 +81,18 @@ export function deactivate() {}
  */
 function getCurrentBranch(): Promise<string | null> {
     return new Promise((resolve) => {
-        exec('git rev-parse --abbrev-ref HEAD', (err, stdout, stderr) => {
-            if (err || stderr) {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        exec('git rev-parse --abbrev-ref HEAD', { cwd: workspaceFolder }, (err, stdout, stderr) => {
+            if (err) {
+                console.error('Error executing git command:', err);
+                resolve(null);
+            } else if (stderr) {
+                console.error('Git command stderr:', stderr);
                 resolve(null);
             } else {
-                resolve(stdout.trim());
+                const branch = stdout.trim();
+                console.log('Current branch:', branch);
+                resolve(branch);
             }
         });
     });
