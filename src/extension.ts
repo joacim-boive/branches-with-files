@@ -10,51 +10,50 @@ interface BranchState {
 }
 
 let currentBranch: string | null = null;
+let openFiles: Set<string> = new Set();
+
+function updateOpenFiles(filePath: string, isOpening: boolean) {
+  if (isOpening) {
+    openFiles.add(filePath);
+  } else {
+    openFiles.delete(filePath);
+  }
+  // Save the updated openFiles set to workspaceState
+  vscode.commands.executeCommand('branchesWithFiles.saveOpenFiles');
+}
 
 function getAllOpenFiles(): string[] {
-  const openFiles = new Set<string>();
-
-  const shouldIncludeFile = (filePath: string): boolean => {
-    const parts = filePath.split(path.sep);
-    return !parts.some((part) => part.startsWith('.'));
-  };
-
-  vscode.window.visibleTextEditors.forEach((editor) => {
-    if (editor.document.uri.scheme === 'file' && shouldIncludeFile(editor.document.fileName)) {
-      openFiles.add(editor.document.fileName);
-    }
-  });
-
-  vscode.workspace.textDocuments.forEach((doc) => {
-    if (doc.uri.scheme === 'file' && shouldIncludeFile(doc.fileName)) {
-      openFiles.add(doc.fileName);
-    }
-  });
-
   return Array.from(openFiles);
 }
 
 async function saveState(context: vscode.ExtensionContext, branch: string) {
-  const openFiles = getAllOpenFiles();
-  console.log(`Saving state for branch '${branch}'. Open files:`, openFiles);
+  const openFilesList = getAllOpenFiles();
+  console.log(`Saving state for branch '${branch}'. Open files:`, openFilesList);
 
-  if (openFiles.length > 0) {
+  if (openFilesList.length > 0) {
     const branchStates = context.workspaceState.get<Record<string, BranchState>>(
       'branchStates',
       {}
     );
-    branchStates[branch] = { files: openFiles };
+    branchStates[branch] = { files: openFilesList };
     await context.workspaceState.update('branchStates', branchStates);
-    console.log(`Saved state for branch '${branch}' (${openFiles.length} files).`);
+    console.log(`Saved state for branch '${branch}' (${openFilesList.length} files).`);
 
-    const message = `Saved state for branch '${branch}' (${openFiles.length} files).`;
+    const message = `Saved state for branch '${branch}' (${openFilesList.length} files).`;
     vscode.window.showInformationMessage(message, 'Show Files').then((selection) => {
       if (selection === 'Show Files') {
-        showFileList(branch, openFiles);
+        showFileList(branch, openFilesList);
       }
     });
   } else {
-    vscode.window.showInformationMessage(`No open files to save for branch '${branch}'.`);
+    // If there are no open files, remove the state for this branch
+    const branchStates = context.workspaceState.get<Record<string, BranchState>>('branchStates', {});
+    if (branch in branchStates) {
+      delete branchStates[branch];
+      await context.workspaceState.update('branchStates', branchStates);
+      console.log(`Cleared state for branch '${branch}' as there are no open files.`);
+    }
+    vscode.window.showInformationMessage(`No open files to save for branch '${branch}'. State cleared.`);
   }
 }
 
@@ -123,14 +122,60 @@ async function handleBranchChange(context: vscode.ExtensionContext, newBranch: s
   await restoreState(context, newBranch);
 }
 
+async function clearAllState(context: vscode.ExtensionContext) {
+  // Clear branch states
+  await context.workspaceState.update('branchStates', undefined);
+  
+  // Clear openFiles set
+  openFiles.clear();
+  await context.workspaceState.update('openFiles', []);
+  
+  console.log('All branch states and open files have been cleared.');
+  vscode.window.showInformationMessage('All branch states and open files have been cleared.');
+}
+
+async function saveOpenFilesToState(context: vscode.ExtensionContext) {
+  await context.workspaceState.update('openFiles', Array.from(openFiles));
+}
+
+async function loadOpenFilesFromState(context: vscode.ExtensionContext) {
+  const savedOpenFiles = context.workspaceState.get<string[]>('openFiles', []);
+  openFiles = new Set(savedOpenFiles);
+}
+
 export async function activate(context: vscode.ExtensionContext) {
-  vscode.window.showInformationMessage('Activating Branches With Files extension');
+  vscode.window.showInformationMessage('Branches With Files extension activated. Changes to opened files will be tracked from now.');
+
+  // Load previously saved open files
+  await loadOpenFilesFromState(context);
+
+  // Set up listeners for file open and close events
+  context.subscriptions.push(
+    vscode.window.onDidChangeVisibleTextEditors((editors) => {
+      editors.forEach((editor) => {
+        if (editor.document.uri.scheme === 'file') {
+          updateOpenFiles(editor.document.fileName, true);
+        }
+      });
+    }),
+    vscode.workspace.onDidCloseTextDocument((document) => {
+      if (document.uri.scheme === 'file') {
+        updateOpenFiles(document.fileName, false);
+      }
+    })
+  );
+
+  // Register command to save open files
+  const saveOpenFilesCommand = vscode.commands.registerCommand(
+    'branchesWithFiles.saveOpenFiles',
+    () => saveOpenFilesToState(context)
+  );
+  context.subscriptions.push(saveOpenFilesCommand);
 
   // Initial branch detection
   currentBranch = await getCurrentBranch();
   if (currentBranch) {
-    vscode.window.showInformationMessage(`Initial branch: ${currentBranch}`);
-    await restoreState(context, currentBranch);
+    vscode.window.showInformationMessage(`Current branch: ${currentBranch}`);
   }
 
   // Set up Git extension API listener
@@ -208,7 +253,22 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  context.subscriptions.push(saveStateCommand, restoreStateCommand);
+  const clearAllStateCommand = vscode.commands.registerCommand(
+    'branchesWithFiles.clearAllState',
+    async () => {
+      try {
+        await clearAllState(context);
+      } catch (error: any) {
+        vscode.window.showErrorMessage(`Error clearing all states: ${error.message}`);
+      }
+    }
+  );
+
+  context.subscriptions.push(saveStateCommand, restoreStateCommand, clearAllStateCommand);
 }
 
-export function deactivate() {}
+export function deactivate() {
+  // This will be called when the extension is deactivated
+  vscode.commands.executeCommand('branchesWithFiles.saveOpenFiles');
+}
+

@@ -1,6 +1,6 @@
 {
   "name": "branches-with-files",
-  "publisher": "Joacim Boive",
+  "publisher": "jboive",
   "version": "1.0.6",
   "main": "out/extension.js",
   "author": "Joacim Boive <joacim.boive@carnegie.se>",
@@ -30,6 +30,10 @@
       {
         "command": "branchesWithFiles.logAllOpenFiles",
         "title": "Log All Open Files"
+      },
+      {
+        "command": "branchesWithFiles.clearAllState",
+        "title": "Clear All State"
       }
     ]
   },
