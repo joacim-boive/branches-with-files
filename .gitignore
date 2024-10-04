@@ -1,0 +1,19 @@
+# Node modules
+node_modules/
+
+# VSCode settings
+.vscode/
+
+# Compiled JavaScript output
+out/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+
+# Optional: Coverage reports
+coverage/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
